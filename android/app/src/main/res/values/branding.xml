@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">CS2 Coinflip</string>
+    <color name="launcher_background">#0A1520</color>
+</resources>

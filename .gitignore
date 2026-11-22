@@ -1,0 +1,8 @@
+.tools/
+/dist/
+/windows/target/
+/android/.gradle/
+/android/.kotlin/
+**/build/
+local.properties
+*.jks

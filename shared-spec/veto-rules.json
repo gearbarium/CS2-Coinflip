@@ -1,0 +1,8 @@
+{
+  "pool": ["Ancient", "Anubis", "Cache", "Dust II", "Inferno", "Mirage", "Nuke"],
+  "formats": {
+    "BO1": ["BAN", "BAN", "BAN", "BAN", "BAN", "BAN"],
+    "BO3": ["BAN", "BAN", "PICK", "PICK", "BAN", "BAN"],
+    "BO5": ["BAN", "BAN", "PICK", "PICK", "PICK", "PICK"]
+  }
+}

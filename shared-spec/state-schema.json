@@ -1,0 +1,22 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["version","teams","format","settings","winner","first","moves"],
+  "properties":{
+    "version":{"const":1},
+    "teams":{"type":"array","items":{"type":"string"},"minItems":2,"maxItems":2},
+    "format":{"enum":["BO1","BO3","BO5"]},
+    "winner":{"enum":[null,0,1]},
+    "first":{"enum":[null,0,1]},
+    "moves":{"type":"array","uniqueItems":true,"maxItems":6,"items":{"type":"integer","minimum":0,"maximum":6}},
+    "settings":{"type":"object","required":["pools","active","duration","sound","reduced","choose","scale","effects","confirm"],
+      "properties":{
+        "pools":{"type":"array","minItems":1,"items":{"type":"object","required":["name","maps"],"properties":{"name":{"type":"string"},"maps":{"type":"array","items":{"type":"string"}}}}},
+        "active":{"type":"integer","minimum":0},
+        "duration":{"type":"integer","minimum":500,"maximum":4000},
+        "sound":{"type":"boolean"},"reduced":{"type":"boolean"},"choose":{"type":"boolean"},
+        "scale":{"type":"number","minimum":0.85,"maximum":1.4},"effects":{"type":"boolean"},"confirm":{"type":"boolean"}
+      }
+    }
+  }
+}
