@@ -31,6 +31,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
@@ -73,6 +78,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import kotlin.math.sin
 
 private val ComponentActivity.dataStore by preferencesDataStore("coinflip")
 private val stateKey = stringPreferencesKey("match")
@@ -158,6 +164,10 @@ class MainActivity : ComponentActivity() {
 internal val night = Color(0xFF050B12)
 internal val panel = Color(0xFF0A1520)
 internal val raised = Color(0xFF11212E)
+private val elevated = Color(0xFF08111B)
+private val success = Color(0xFF91CCAE)
+private val errorTone = Color(0xFFEB9A96)
+private val disabled = Color(0xFF657786)
 internal val amber = Color(0xFFFFB02E)
 internal val silver = Color(0xFFF1F7FB)
 internal val muted = Color(0xFF9CAEBB)
@@ -190,7 +200,7 @@ private val type = Typography(
             secondaryContainer = raised, onSecondaryContainer = amber,
             secondary = amberMuted, onSecondary = night,
             surfaceContainer = panel, surfaceContainerHigh = raised,
-            outline = line, outlineVariant = divider
+            outline = line, outlineVariant = divider, error = errorTone
         ),
         typography = type
     ) { CompositionLocalProvider(LocalContentColor provides silver, content = content) }
@@ -201,8 +211,11 @@ private val type = Typography(
     flip: () -> Unit, resume: (Boolean) -> Unit, copy: (String) -> Unit, export: (String) -> Unit
 ) {
     val match = state.match
-    val compactHeight = LocalConfiguration.current.screenHeightDp < 500
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val screen = LocalConfiguration.current
+    val compactHeight = screen.screenHeightDp < 500
+    val wide = screen.screenWidthDp >= 530
+    val sideBySide = wide && compactHeight && match.winner == null
+    val coinSize = if (compactHeight) 64.dp else (screen.screenHeightDp - 495).coerceIn(116, 224).dp
     var settings by rememberSaveable { mutableStateOf(false) }
     var pending by rememberSaveable { mutableStateOf<Int?>(null) }
     var reset by rememberSaveable { mutableStateOf(false) }
@@ -215,7 +228,7 @@ private val type = Typography(
             .safeDrawingPadding().imePadding().padding(horizontal = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(Modifier.widthIn(max = 800.dp).fillMaxWidth().heightIn(min = 64.dp),
+        Row(Modifier.widthIn(max = 800.dp).fillMaxWidth().heightIn(min = if (compactHeight) 48.dp else 64.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (settings) Text("Настройки", style = MaterialTheme.typography.headlineSmall)
@@ -230,23 +243,37 @@ private val type = Typography(
         }
         HorizontalDivider(color = divider)
         if (settings) {
-            SettingsScreen(match, rules, edit, Modifier.widthIn(max = 800.dp).weight(1f).fillMaxWidth())
+            SettingsScreen(match, rules, edit, Modifier.widthIn(max = 1000.dp).weight(1f).fillMaxWidth().reveal("settings", match.settings.reduced))
         } else {
-            Column(Modifier.widthIn(max = 800.dp).weight(1f).fillMaxWidth()
-                .verticalScroll(rememberScrollState()).padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.widthIn(max = 1000.dp).weight(1f).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(vertical = if (compactHeight) 6.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (!state.ready) CircularProgressIndicator()
                 if (state.ready && !state.resume) {
-                    Column(Modifier.fillMaxWidth().background(panel, largeCard).border(1.dp, divider, largeCard).padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (!match.complete) Column(Modifier.fillMaxWidth().background(elevated, largeCard).border(1.dp, divider, largeCard)
+                        .padding(if (compactHeight) 8.dp else 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (compactHeight) 6.dp else 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
                         if (match.winner == null) {
+                            if (!sideBySide) Text("Жеребьёвка", Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall)
                             val field: @Composable (Int, Modifier) -> Unit = { index, modifier ->
                                 OutlinedTextField(match.teams[index],
                                     { name -> edit { it.copy(teams = it.teams.toMutableList().apply { set(index, name) }) } },
                                     modifier.testTag("team$index"), singleLine = true,
                                     label = { Text(if (index == 0) "Орёл" else "Решка") }, shape = rounded,
+                                    leadingIcon = { Text(if (index == 0) "●" else "◇", color = amber) },
                                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = highlight))
                             }
-                            if (wide) {
+                            if (sideBySide) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        field(0, Modifier.fillMaxWidth())
+                                        field(1, Modifier.fillMaxWidth())
+                                    }
+                                    CoinLaunch(state, coinSize, flip, Modifier.weight(1f))
+                                }
+                            } else if (wide) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     field(0, Modifier.weight(1f))
                                     field(1, Modifier.weight(1f))
@@ -259,18 +286,20 @@ private val type = Typography(
                         if (veto) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Coin(state, Modifier.size(42.dp))
-                                Text("Победитель · ${match.teams[winner!!]}", Modifier.weight(1f), color = amber)
+                                Column(Modifier.weight(1f).reveal(winner, match.settings.reduced)) {
+                                    Text("Победитель жеребьёвки", color = success, style = MaterialTheme.typography.labelMedium)
+                                    Text(match.teams[winner!!], style = MaterialTheme.typography.titleLarge)
+                                }
                                 TextButton(onClick = { reset = true }) { Text("Сброс") }
                             }
-                        } else {
-                            Coin(state, Modifier.size(if (compactHeight) 96.dp else 184.dp))
+                        } else if (!sideBySide) {
                             if (winner == null) {
-                                AmberButton(flip, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !state.flipping) {
-                                    Text(if (state.flipping) "Жеребьёвка…" else "Подбросить")
-                                }
+                                CoinLaunch(state, coinSize, flip)
                             } else {
+                                Coin(state, Modifier.size(coinSize))
                                 Text("${if (winner == 0) "Орёл" else "Решка"} · ${match.teams[winner]}",
-                                    color = amber, style = MaterialTheme.typography.titleLarge)
+                                    modifier = Modifier.reveal(winner, match.settings.reduced),
+                                    color = amber, style = MaterialTheme.typography.headlineSmall)
                                 AmberButton({ edit { it.start(false) } }, Modifier.fillMaxWidth()) { Text("Начать первым") }
                                 OutlinedButton({ edit { it.start(true) } }, Modifier.fillMaxWidth(), shape = rounded) { Text("Передать первый ход") }
                                 TextButton({ reset = true }) { Text("Сброс") }
@@ -286,13 +315,8 @@ private val type = Typography(
                 }
             }
             HorizontalDivider(color = divider)
-            Row(Modifier.widthIn(max = 800.dp).fillMaxWidth().background(navigation).padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("BO1", "BO3", "BO5").forEach { format ->
-                    FilterChip(selected = match.format == format, onClick = { edit { it.copy(format = format) } },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                        enabled = state.ready && match.winner == null, shape = rounded, label = { Text(format) })
-                }
+            FormatSelector(match.format, state.ready && match.winner == null) { format ->
+                edit { it.copy(format = format) }
             }
         }
     }
@@ -306,8 +330,18 @@ private val type = Typography(
     }
 }
 
+@Composable private fun CoinLaunch(state: Screen, size: androidx.compose.ui.unit.Dp, flip: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Coin(state, Modifier.size(size))
+        AmberButton(flip, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !state.flipping) {
+            Text(if (state.flipping) "Жеребьёвка…" else "Подбросить")
+        }
+    }
+}
+
 @Composable private fun Confirm(title: String, message: String, yes: String, no: String, accept: () -> Unit, reject: () -> Unit) {
-    AlertDialog(onDismissRequest = {},
+    AlertDialog(onDismissRequest = {}, containerColor = raised,
         title = { Text(title) }, text = { Text(message) },
         confirmButton = { AmberButton(accept) { Text(yes) } },
         dismissButton = { TextButton(reject) { Text(no) } }, shape = rounded)
@@ -353,21 +387,27 @@ private val type = Typography(
             else -> cos(motion.value * turns * Math.PI).toFloat()
         }
         // Rotation about X keeps the horizontal diameter fixed.
-        val diameter = size.minDimension
+        val stage = size.minDimension
+        val lift = if (state.flipping && !match.settings.reduced)
+            sin(motion.value * Math.PI).toFloat() * stage * .09f else 0f
+        val faceCenter = center - Offset(0f, lift)
+        val diameter = if (stage > 100.dp.toPx()) stage * .87f else stage
         val height = (diameter * abs(turn).coerceAtLeast(0.02f)).roundToInt().coerceAtLeast(1)
         val edge = sqrt((1f - turn * turn).coerceAtLeast(0f))
         if (match.settings.effects && diameter > 50.dp.toPx()) {
-            drawCircle(Brush.radialGradient(listOf(Color(0xFF49301A), Color.Transparent), center, diameter / 2), diameter / 2)
+            drawCircle(Brush.radialGradient(listOf(Color(0xFF694322), Color.Transparent), center, stage / 2), stage / 2)
+            drawCircle(amber.copy(alpha = .22f), stage * .455f, style = Stroke(1.dp.toPx()))
+            drawCircle(amberMuted.copy(alpha = .21f), stage * .49f, style = Stroke(1.dp.toPx()))
         }
         if (edge > 0.02f) {
             val edgeSize = Size(diameter * 0.86f, diameter * edge * 0.055f)
-            drawRoundRect(amberMuted, topLeft = center - Offset(edgeSize.width / 2, edgeSize.height / 2),
+            drawRoundRect(amberMuted, topLeft = faceCenter - Offset(edgeSize.width / 2, edgeSize.height / 2),
                 size = edgeSize, cornerRadius = CornerRadius(3.dp.toPx()))
         }
         val face = if (turn < 0f) tails else heads
         val width = diameter.roundToInt()
-        drawImage(face, dstOffset = IntOffset(((size.width - width) / 2).roundToInt(),
-            ((size.height - height) / 2).roundToInt()), dstSize = IntSize(width, height))
+        drawImage(face, dstOffset = IntOffset((faceCenter.x - width / 2f).roundToInt(),
+            (faceCenter.y - height / 2f).roundToInt()), dstSize = IntSize(width, height))
     }
 }
 
@@ -378,7 +418,8 @@ private val type = Typography(
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val focused by source.collectIsFocusedAsState()
-    Button(onClick, modifier, enabled, shape = rounded,
+    val scale by animateFloatAsState(if (pressed) .975f else 1f, tween(100), label = "button press")
+    Button(onClick, modifier.graphicsLayer { scaleX = scale; scaleY = scale }, enabled, shape = rounded,
         border = if (focused) BorderStroke(2.dp, highlight) else null,
         colors = ButtonDefaults.buttonColors(containerColor = if (pressed) amberPressed else amber, contentColor = night),
         interactionSource = source, content = content)
@@ -388,48 +429,41 @@ private val type = Typography(
     match: Match, rules: Rules, onMap: (Int) -> Unit, undo: () -> Unit, reset: () -> Unit,
     copy: () -> Unit, export: () -> Unit
 ) {
-    Text("Map Veto", style = MaterialTheme.typography.headlineSmall)
+    Text(if (match.complete) "Результат матча" else "Map Veto", style = MaterialTheme.typography.headlineSmall)
     val decider = match.decider
     if (decider != null) {
+        TurnPanel(match.format, match.teams.joinToString("  ·  "),
+            "Победитель жеребьёвки · ${match.teams[match.winner!!]}", match.settings.reduced)
         val picks = match.picks(rules)
         picks.forEachIndexed { index, (step, map) ->
             SeriesMap(index + 1, match.maps[map], match.teams[match.actor(step)!!], decisive = false)
         }
         SeriesMap(picks.size + 1, match.maps[decider], "Решающая карта", decisive = true)
-        Text(match.result(rules, includeSeries = false), Modifier.fillMaxWidth().background(panel, largeCard).border(1.dp, divider, largeCard).padding(16.dp),
-            style = MaterialTheme.typography.bodyLarge)
+        HistoryPanel(match, rules)
         AmberButton(copy, Modifier.fillMaxWidth()) { Text("Скопировать результат") }
         OutlinedButton(export, Modifier.fillMaxWidth(), shape = rounded) { Text("Сохранить PNG") }
         OutlinedButton(reset, Modifier.fillMaxWidth(), shape = rounded) { Text("Новый матч") }
         OutlinedButton(undo, shape = rounded) { Text("Отменить ход") }
         return
     } else {
-        Text("${match.teams[match.actor()!!]} · ${match.action(rules)}", color = amber)
+        val action = match.action(rules)
+        TurnPanel("$action  ·  Ход ${match.moves.size + 1} / 6", match.teams[match.actor()!!],
+            if (action == "PICK") "Выберите карту ${match.picks(rules).size + 1}" else "Исключите карту из пула",
+            match.settings.reduced)
     }
-    match.maps.indices.chunked(2).forEach { row ->
+    val columns = if (LocalConfiguration.current.screenWidthDp >= 680) 4 else 2
+    match.maps.indices.chunked(columns).forEach { row ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (index in row) {
                 val step = match.moves.indexOf(index)
                 val status = if (step >= 0) match.action(rules, step) else null
-                OutlinedButton(onClick = { onMap(index) }, enabled = !match.complete && status == null,
-                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("map$index"), shape = rounded,
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = panel, contentColor = silver,
-                        disabledContainerColor = if (status == "PICK") Color(0xFF302116) else raised,
-                        disabledContentColor = if (status == "BAN") muted else amber)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(match.maps[index])
-                        status?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
-                    }
-                }
+                MapCard(match.maps[index], status, Modifier.weight(1f).testTag("map$index")) { onMap(index) }
             }
-            if (row.size == 1) Spacer(Modifier.weight(1f))
+            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
         }
     }
     if (!match.complete && match.moves.isNotEmpty()) {
-        Text("История", style = MaterialTheme.typography.titleMedium)
-        match.moves.forEachIndexed { step, index ->
-            Text("${match.teams[match.actor(step)!!]} · ${match.action(rules, step)} · ${match.maps[index]}", color = muted)
-        }
+        HistoryPanel(match, rules)
     }
     OutlinedButton(undo, enabled = match.moves.isNotEmpty(), shape = rounded) { Text("Отменить ход") }
 }
@@ -444,5 +478,78 @@ private val type = Typography(
         Text("Карта $number", color = if (decisive) highlight else amber, style = MaterialTheme.typography.labelLarge)
         Text(name, style = MaterialTheme.typography.headlineSmall)
         Text(detail, color = if (decisive) highlight else muted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable private fun Modifier.reveal(state: Any?, reduced: Boolean): Modifier {
+    var ready by remember(state) { mutableStateOf(false) }
+    LaunchedEffect(state) { ready = true }
+    val progress by animateFloatAsState(if (ready || reduced) 1f else .82f, tween(180), label = "panel reveal")
+    return graphicsLayer {
+        alpha = progress
+        translationY = (1f - progress) * 24.dp.toPx()
+    }
+}
+
+@Composable internal fun WorkspacePanel(
+    modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier.fillMaxWidth().background(panel, largeCard).border(1.dp, divider, largeCard).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+}
+
+@Composable private fun TurnPanel(caption: String, title: String, detail: String, reduced: Boolean) {
+    WorkspacePanel(Modifier.reveal(caption, reduced)) {
+        Text(caption, color = amber, style = MaterialTheme.typography.labelLarge)
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(detail, color = muted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable private fun HistoryPanel(match: Match, rules: Rules) {
+    WorkspacePanel {
+        Text("История veto", style = MaterialTheme.typography.titleMedium)
+        match.moves.forEachIndexed { step, map ->
+            HorizontalDivider(color = divider)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                val action = match.action(rules, step).orEmpty()
+                Text((step + 1).toString().padStart(2, '0'), color = muted, style = MaterialTheme.typography.labelMedium)
+                Text(action, color = if (action == "PICK") amber else errorTone, style = MaterialTheme.typography.labelLarge)
+                Column(Modifier.weight(1f)) {
+                    Text(match.maps[map], style = MaterialTheme.typography.titleMedium)
+                    Text(match.teams[match.actor(step)!!], color = muted, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun FormatSelector(value: String, enabled: Boolean, select: (String) -> Unit) {
+    Row(Modifier.widthIn(max = 800.dp).fillMaxWidth().padding(vertical = 8.dp)
+        .background(navigation, largeCard).border(1.dp, divider, largeCard).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf("BO1", "BO3", "BO5").forEach { format ->
+            val active = value == format
+            Box(Modifier.weight(1f).heightIn(min = 48.dp)
+                .background(if (active) raised else navigation, rounded)
+                .border(1.dp, if (active) amber else Color.Transparent, rounded)
+                .selectable(active, enabled = enabled, role = Role.RadioButton, onClick = { select(format) }),
+                contentAlignment = Alignment.Center) {
+                Text(format, color = if (active) amber else if (enabled) muted else disabled,
+                    style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable private fun MapCard(name: String, status: String?, modifier: Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, enabled = status == null, modifier = modifier.heightIn(min = 76.dp),
+        color = if (status == "PICK") Color(0xFF302116) else raised, contentColor = silver,
+        shape = largeCard, border = BorderStroke(1.dp, if (status == "PICK") amber else divider)) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(name, style = MaterialTheme.typography.titleMedium)
+            Text(status ?: "Доступна", color = when (status) { "PICK" -> amber; "BAN" -> errorTone; else -> muted },
+                style = MaterialTheme.typography.labelMedium)
+        }
     }
 }
